@@ -1,5 +1,7 @@
 package;
 
+import ceramic.Color;
+import ceramic.Group;
 import ceramic.InputMap;
 import ceramic.Quad;
 import ceramic.Scene;
@@ -10,6 +12,7 @@ import ceramic.SeedRandom;
  */
 enum abstract PlayerInput(Int) {
 	var JUMP;
+	var RESTART;
 }
 
 class Level extends Scene {
@@ -20,9 +23,13 @@ class Level extends Scene {
 	var pipes:Map<Int, Array<Quad>>;
 	var pipesReady:Bool = false;
 
+	var pipesGroup:Group<Quad> = new Group<Quad>();
+
 	var rand = new SeedRandom(Date.now().getTime());
 
 	var wOffset:Float = 20;
+
+	var alive:Bool = true;
 
 	override function preload() {
 		assets.add(Images.YELLOW_BIRD);
@@ -30,6 +37,7 @@ class Level extends Scene {
 	}
 
 	override function create() {
+		initArcadePhysics();
 		initPlayer();
 		bindKeys();
 		initPipes();
@@ -37,6 +45,7 @@ class Level extends Scene {
 
 	function initPlayer() {
 		player = new Quad();
+		player.id = "player";
 
 		player.anchor(0.5, 0.5);
 
@@ -44,8 +53,35 @@ class Level extends Scene {
 
 		player.pos(width / 2 - player.width / 2, height / 2 - player.height / 2);
 
-		player.initArcadePhysics();
+		player.initArcadePhysics(arcade.world);
 		player.gravity(0, 16);
+		player.body.setCircle(player.width / 2);
+
+		player.onCollide(this, (v1, v2) -> {
+			alive = false;
+
+			player.body.gravityY = 0;
+			player.body.velocityY = 0;
+
+			// draw a quad for the colliding body
+			var quad2 = new Quad();
+			quad2.color = Color.RED;
+			quad2.anchor(v2.anchorX, v2.anchorY);
+			quad2.rotation = v2.body.rotation;
+			quad2.size(v2.body.width, v2.body.height);
+			quad2.pos(v2.body.x, v2.body.y);
+
+			// draw a quad for the player
+			var quad1 = new Quad();
+			quad1.color = Color.RED;
+			quad1.anchor(v1.anchorX, v1.anchorY);
+			quad1.rotation = v1.rotation;
+			quad1.size(v1.width, v1.height);
+			quad1.pos(v1.x, v1.y);
+
+			add(quad1);
+			add(quad2);
+		});
 
 		add(player);
 	}
@@ -54,6 +90,8 @@ class Level extends Scene {
 		inputMap = new InputMap<PlayerInput>();
 		// Bind the space bar to the jump action
 		inputMap.bindKeyCode(PlayerInput.JUMP, SPACE);
+		// Bind the R key to the restart action
+		inputMap.bindKeyCode(PlayerInput.RESTART, KEY_R);
 	}
 
 	function initPipes() {
@@ -76,19 +114,36 @@ class Level extends Scene {
 			pipeBottom.rotation = 0;
 			pipeBottom.pos(width + wOffset + pipeBottom.width + (pipeBottom.width * i * 2.5), height - ofs.bottom);
 
+			pipeBottom.id = Std.string(i);
+			pipeTop.id = Std.string(i);
+
+			pipeTop.initArcadePhysics(arcade.world);
+			pipeBottom.initArcadePhysics(arcade.world);
+
 			pipes.set(i, [pipeTop, pipeBottom]);
+			pipesGroup.add(pipeTop);
+			pipesGroup.add(pipeBottom);
 
 			add(pipeTop);
 			add(pipeBottom);
 		}
-
 		pipesReady = true;
 	}
 
 	override function update(dt:Float) {
-		if (pipesReady) {
+		if (inputMap.justPressed(PlayerInput.RESTART)) {
+			// Restart the scene
+			app.scenes.main = new Level();
+
+			player.destroy();
+			pipesGroup.destroy();
+			destroy();
+		}
+
+		if (pipesReady && alive) {
 			updatePlayer(dt);
 			updatePipes(dt);
+			arcade.world.collide(player, pipesGroup);
 		}
 
 		super.update(dt);
@@ -108,8 +163,8 @@ class Level extends Scene {
 
 	function updatePipes(dt:Float) {
 		for (p in pipes) {
-			p[0].x -= 120 * dt;
-			p[1].x -= 120 * dt;
+			p[0].x -= 110 * dt;
+			p[1].x -= 110 * dt;
 
 			if (p[0].x < (-p[0].width - wOffset)) {
 				var ofs = generateRandomOffsets(p[0].height);
