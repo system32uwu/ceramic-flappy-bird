@@ -29,7 +29,7 @@ class Level extends Scene {
 
 	var wOffset:Float = 20;
 
-	var alive:Bool = true;
+	@observe var alive:Bool = true;
 
 	var bg:Repeat;
 	var message:Quad;
@@ -117,19 +117,23 @@ class Level extends Scene {
 			}
 		});
 
+		onAliveChange(this, (c, p) -> {
+			if (!c) {
+				player.body.gravityY = 0;
+				player.body.velocityY = 0;
+
+				var gameOver = new Quad();
+				gameOver.anchor(0.5, 0.5);
+				gameOver.texture = assets.texture(Images.GAME_OVER);
+				gameOver.pos(width / 2, height / 2);
+				gameOver.depth = 10;
+
+				add(gameOver);
+			}
+		});
+
 		player.onCollideBody(this, (v1, v2) -> {
 			alive = false;
-
-			player.body.gravityY = 0;
-			player.body.velocityY = 0;
-
-			var gameOver = new Quad();
-			gameOver.anchor(0.5, 0.5);
-			gameOver.texture = assets.texture(Images.GAME_OVER);
-			gameOver.pos(width / 2, height / 2);
-			gameOver.depth = 10;
-
-			add(gameOver);
 		});
 
 		add(player);
@@ -215,6 +219,10 @@ class Level extends Scene {
 			player.tween(BOUNCE_EASE_IN, 2, 1, 360, (value, time) -> {
 				player.rotation = value * player.velocityY;
 			});
+		}
+
+		if (player.y < -player.height) {
+			alive = false;
 		}
 	}
 
