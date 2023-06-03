@@ -1,9 +1,9 @@
 package;
 
-import ceramic.Color;
 import ceramic.Group;
 import ceramic.InputMap;
 import ceramic.Quad;
+import ceramic.Repeat;
 import ceramic.Scene;
 import ceramic.SeedRandom;
 
@@ -17,13 +17,13 @@ enum abstract PlayerInput(Int) {
 
 class Level extends Scene {
 	var player:Quad;
-	var jumpSpeed:Float = 50;
+	var jumpSpeed:Float = 40;
 	var inputMap:InputMap<PlayerInput>;
 
 	var pipes:Map<Int, Array<Quad>>;
 	var pipesReady:Bool = false;
 
-	var pipesGroup:Group<Quad> = new Group<Quad>();
+	var loseOnCollideWith:Group<Quad> = new Group<Quad>();
 
 	var rand = new SeedRandom(Date.now().getTime());
 
@@ -31,16 +31,69 @@ class Level extends Scene {
 
 	var alive:Bool = true;
 
+	var bg:Repeat;
+	var message:Quad;
+	var base:Quad;
+
+	@observe public var firstTap:Bool = false;
+
 	override function preload() {
 		assets.add(Images.YELLOW_BIRD);
 		assets.add(Images.PIPE_GREEN);
+		assets.add(Images.BACKGROUND_DAY);
+		assets.add(Images.GAME_OVER);
+		assets.add(Images.MESSAGE);
+		assets.add(Images.BASE);
 	}
 
 	override function create() {
 		initArcadePhysics();
+		initPipes();
+		initMessage();
 		initPlayer();
 		bindKeys();
-		initPipes();
+		initBackground();
+		initBase();
+	}
+
+	function initBase() {
+		base = new Quad();
+		base.texture = assets.texture(Images.BASE);
+		base.anchor(0.5, 0.5);
+		base.pos(width / 2, height - base.height / 8);
+		base.width = width;
+
+		base.depth = -1;
+
+		base.initArcadePhysics(arcade.world);
+
+		loseOnCollideWith.add(base);
+
+		add(base);
+	}
+
+	function initMessage() {
+		message = new Quad();
+		message.texture = assets.texture(Images.MESSAGE);
+		message.anchor(0.5, 0.5);
+		message.pos(width / 2, height / 2);
+
+		message.depth = 0;
+
+		add(message);
+	}
+
+	function initBackground() {
+		bg = new Repeat();
+		bg.texture = assets.texture(Images.BACKGROUND_DAY);
+		bg.pos(0, 0);
+
+		bg.width = width;
+		bg.height = height;
+
+		bg.depth = -3;
+
+		add(bg);
 	}
 
 	function initPlayer() {
@@ -51,36 +104,32 @@ class Level extends Scene {
 
 		player.texture = assets.texture(Images.YELLOW_BIRD);
 
-		player.pos(width / 2 - player.width / 2, height / 2 - player.height / 2);
+		player.pos((width / 2) - message.width + 10, height / 2 - player.height / 2);
 
 		player.initArcadePhysics(arcade.world);
-		player.gravity(0, 16);
-		player.body.setCircle(player.width / 2);
 
-		player.onCollide(this, (v1, v2) -> {
+		player.gravity(0, 0);
+
+		onFirstTapChange(this, (c, p) -> {
+			if (c) {
+				message.destroy();
+				player.gravity(0, 22);
+			}
+		});
+
+		player.onCollideBody(this, (v1, v2) -> {
 			alive = false;
 
 			player.body.gravityY = 0;
 			player.body.velocityY = 0;
 
-			// draw a quad for the colliding body
-			var quad2 = new Quad();
-			quad2.color = Color.RED;
-			quad2.anchor(v2.anchorX, v2.anchorY);
-			quad2.rotation = v2.body.rotation;
-			quad2.size(v2.body.width, v2.body.height);
-			quad2.pos(v2.body.x, v2.body.y);
+			var gameOver = new Quad();
+			gameOver.anchor(0.5, 0.5);
+			gameOver.texture = assets.texture(Images.GAME_OVER);
+			gameOver.pos(width / 2, height / 2);
+			gameOver.depth = 10;
 
-			// draw a quad for the player
-			var quad1 = new Quad();
-			quad1.color = Color.RED;
-			quad1.anchor(v1.anchorX, v1.anchorY);
-			quad1.rotation = v1.rotation;
-			quad1.size(v1.width, v1.height);
-			quad1.pos(v1.x, v1.y);
-
-			add(quad1);
-			add(quad2);
+			add(gameOver);
 		});
 
 		add(player);
@@ -106,23 +155,30 @@ class Level extends Scene {
 
 			var ofs = generateRandomOffsets(pipeTop.height);
 
-			pipeTop.anchor(0, 0);
+			pipeTop.anchor(0.5, 0.5);
+			pipeTop.pos((width + wOffset + pipeTop.width) - pipeTop.width / 2 + (pipeTop.width * i * 2.5), ofs.top - pipeTop.height / 2);
 			pipeTop.rotation = 180;
-			pipeTop.pos(width + wOffset + pipeTop.width + (pipeTop.width * i * 2.5), ofs.top);
 
-			pipeBottom.anchor(1, 0);
+			pipeBottom.anchor(0.5, 0.5);
 			pipeBottom.rotation = 0;
-			pipeBottom.pos(width + wOffset + pipeBottom.width + (pipeBottom.width * i * 2.5), height - ofs.bottom);
+			pipeBottom.pos((width + wOffset + pipeBottom.width)
+				- pipeBottom.width / 2
+				+ (pipeBottom.width * i * 2.5),
+				height
+				- ofs.bottom
+				+ pipeBottom.height / 2);
 
 			pipeBottom.id = Std.string(i);
 			pipeTop.id = Std.string(i);
 
 			pipeTop.initArcadePhysics(arcade.world);
 			pipeBottom.initArcadePhysics(arcade.world);
+			pipeTop.depth = -2;
+			pipeBottom.depth = -2;
 
 			pipes.set(i, [pipeTop, pipeBottom]);
-			pipesGroup.add(pipeTop);
-			pipesGroup.add(pipeBottom);
+			loseOnCollideWith.add(pipeTop);
+			loseOnCollideWith.add(pipeBottom);
 
 			add(pipeTop);
 			add(pipeBottom);
@@ -134,16 +190,14 @@ class Level extends Scene {
 		if (inputMap.justPressed(PlayerInput.RESTART)) {
 			// Restart the scene
 			app.scenes.main = new Level();
-
-			player.destroy();
-			pipesGroup.destroy();
-			destroy();
 		}
 
 		if (pipesReady && alive) {
 			updatePlayer(dt);
-			updatePipes(dt);
-			arcade.world.collide(player, pipesGroup);
+			if (firstTap) {
+				updatePipes(dt);
+			}
+			arcade.world.collide(player, loseOnCollideWith);
 		}
 
 		super.update(dt);
@@ -151,14 +205,17 @@ class Level extends Scene {
 
 	function updatePlayer(dt:Float) {
 		if (inputMap.justPressed(PlayerInput.JUMP)) {
+			firstTap = true;
 			player.velocityY = -player.gravityY * dt * this.jumpSpeed;
 		}
-		player.velocityY += player.gravityY * dt;
-		player.y += player.velocityY * dt * ((this.jumpSpeed / 2) - 10);
+		if (firstTap) {
+			player.velocityY += player.gravityY * dt;
+			player.y += player.velocityY * dt * ((this.jumpSpeed / 2) - 10);
 
-		player.tween(BOUNCE_EASE_IN, 2, 1, 360, (value, time) -> {
-			player.rotation = value * player.velocityY;
-		});
+			player.tween(BOUNCE_EASE_IN, 2, 1, 360, (value, time) -> {
+				player.rotation = value * player.velocityY;
+			});
+		}
 	}
 
 	function updatePipes(dt:Float) {
@@ -168,8 +225,8 @@ class Level extends Scene {
 
 			if (p[0].x < (-p[0].width - wOffset)) {
 				var ofs = generateRandomOffsets(p[0].height);
-				p[0].pos(width + wOffset + p[0].width, ofs.top);
-				p[1].pos(width + wOffset + p[1].width, height - ofs.bottom);
+				p[0].pos(width + wOffset + p[0].width, ofs.top - p[0].height / 2);
+				p[1].pos(width + wOffset + p[1].width, height - ofs.bottom + p[1].height / 2);
 			}
 		}
 	}
